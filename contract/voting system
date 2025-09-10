@@ -1,0 +1,210 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.19;
+
+/**
+ * @title VotingSystem
+ * @dev A decentralized voting system smart contract
+ * @author Blockchain Developer
+ */
+contract VotingSystem {
+    // State variables
+    address public owner;
+    uint256 public totalCandidates;
+    uint256 public totalVoters;
+    bool public votingActive;
+    
+    // Structs
+    struct Candidate {
+        uint256 id;
+        string name;
+        string party;
+        uint256 voteCount;
+        bool exists;
+    }
+    
+    struct Voter {
+        bool isRegistered;
+        bool hasVoted;
+        uint256 votedCandidateId;
+    }
+    
+    // Mappings
+    mapping(uint256 => Candidate) public candidates;
+    mapping(address => Voter) public voters;
+    
+    // Events
+    event VoterRegistered(address indexed voter);
+    event VoteCast(address indexed voter, uint256 indexed candidateId);
+    event CandidateAdded(uint256 indexed candidateId, string name, string party);
+    event VotingStarted();
+    event VotingEnded();
+    
+    // Modifiers
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can perform this action");
+        _;
+    }
+    
+    modifier onlyDuringVoting() {
+        require(votingActive, "Voting is not currently active");
+        _;
+    }
+    
+    modifier onlyRegisteredVoter() {
+        require(voters[msg.sender].isRegistered, "You must be registered to vote");
+        _;
+    }
+    
+    // Constructor
+    constructor() {
+        owner = msg.sender;
+        votingActive = false;
+        totalCandidates = 0;
+        totalVoters = 0;
+    }
+    
+    /**
+     * @dev Core Function 1: Register a new voter
+     * @param _voterAddress Address of the voter to register
+     */
+    function registerVoter(address _voterAddress) external onlyOwner {
+        require(!voters[_voterAddress].isRegistered, "Voter already registered");
+        require(_voterAddress != address(0), "Invalid address");
+        
+        voters[_voterAddress] = Voter({
+            isRegistered: true,
+            hasVoted: false,
+            votedCandidateId: 0
+        });
+        
+        totalVoters++;
+        emit VoterRegistered(_voterAddress);
+    }
+    
+    /**
+     * @dev Core Function 2: Cast a vote for a candidate
+     * @param _candidateId ID of the candidate to vote for
+     */
+    function castVote(uint256 _candidateId) external onlyDuringVoting onlyRegisteredVoter {
+        require(!voters[msg.sender].hasVoted, "You have already voted");
+        require(candidates[_candidateId].exists, "Candidate does not exist");
+        
+        // Update voter status
+        voters[msg.sender].hasVoted = true;
+        voters[msg.sender].votedCandidateId = _candidateId;
+        
+        // Increment candidate vote count
+        candidates[_candidateId].voteCount++;
+        
+        emit VoteCast(msg.sender, _candidateId);
+    }
+    
+    /**
+     * @dev Core Function 3: Get voting results and determine winner
+     * @return winnerName Name of the winning candidate
+     * @return winnerParty Party of the winning candidate
+     * @return winnerVotes Number of votes received by winner
+     */
+    function getResults() external view returns (string memory winnerName, string memory winnerParty, uint256 winnerVotes) {
+        require(!votingActive, "Voting is still active");
+        require(totalCandidates > 0, "No candidates registered");
+        
+        uint256 winningVoteCount = 0;
+        uint256 winningCandidateId = 0;
+        
+        // Find candidate with most votes
+        for (uint256 i = 1; i <= totalCandidates; i++) {
+            if (candidates[i].voteCount > winningVoteCount) {
+                winningVoteCount = candidates[i].voteCount;
+                winningCandidateId = i;
+            }
+        }
+        
+        return (
+            candidates[winningCandidateId].name,
+            candidates[winningCandidateId].party,
+            winningVoteCount
+        );
+    }
+    
+    // Additional utility functions
+    
+    /**
+     * @dev Add a new candidate (only owner)
+     * @param _name Name of the candidate
+     * @param _party Party of the candidate
+     */
+    function addCandidate(string memory _name, string memory _party) external onlyOwner {
+        require(!votingActive, "Cannot add candidates during voting");
+        require(bytes(_name).length > 0, "Name cannot be empty");
+        require(bytes(_party).length > 0, "Party cannot be empty");
+        
+        totalCandidates++;
+        candidates[totalCandidates] = Candidate({
+            id: totalCandidates,
+            name: _name,
+            party: _party,
+            voteCount: 0,
+            exists: true
+        });
+        
+        emit CandidateAdded(totalCandidates, _name, _party);
+    }
+    
+    /**
+     * @dev Start the voting process
+     */
+    function startVoting() external onlyOwner {
+        require(!votingActive, "Voting is already active");
+        require(totalCandidates >= 2, "Need at least 2 candidates to start voting");
+        
+        votingActive = true;
+        emit VotingStarted();
+    }
+    
+    /**
+     * @dev End the voting process
+     */
+    function endVoting() external onlyOwner {
+        require(votingActive, "Voting is not active");
+        
+        votingActive = false;
+        emit VotingEnded();
+    }
+    
+    /**
+     * @dev Get candidate details
+     * @param _candidateId ID of the candidate
+     * @return name Name of the candidate
+     * @return party Party of the candidate
+     * @return voteCount Current vote count
+     */
+    function getCandidateDetails(uint256 _candidateId) external view returns (string memory name, string memory party, uint256 voteCount) {
+        require(candidates[_candidateId].exists, "Candidate does not exist");
+        
+        Candidate memory candidate = candidates[_candidateId];
+        return (candidate.name, candidate.party, candidate.voteCount);
+    }
+    
+    /**
+     * @dev Check if an address is registered to vote
+     * @param _voterAddress Address to check
+     * @return isRegistered Registration status
+     * @return hasVoted Voting status
+     */
+    function getVoterStatus(address _voterAddress) external view returns (bool isRegistered, bool hasVoted) {
+        Voter memory voter = voters[_voterAddress];
+        return (voter.isRegistered, voter.hasVoted);
+    }
+    
+    /**
+     * @dev Get total number of votes cast
+     * @return totalVotesCast Total votes cast across all candidates
+     */
+    function getTotalVotesCast() external view returns (uint256 totalVotesCast) {
+        for (uint256 i = 1; i <= totalCandidates; i++) {
+            totalVotesCast += candidates[i].voteCount;
+        }
+        return totalVotesCast;
+    }
+}
